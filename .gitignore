@@ -1,0 +1,15 @@
+# .gitignore
+
+# Binaries
+*.exe
+*.out
+*.mdb
+*.bin
+
+# Editor stuff
+*.swp
+.idea/
+.vscode/
+
+# OS stuff
+.DS_Store
