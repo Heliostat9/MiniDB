@@ -12,12 +12,28 @@ type Table struct {
 	Rows    [][]string
 }
 
-var tables = make(map[string]*Table)
+var Tables = make(map[string]*Table)
 
 const dbFile = "data.db"
 
 func Init() error {
 	return LoadBinaryDB()
+}
+
+func HandleCommand(query string) (string, error) {
+	query = strings.TrimSpace(query)
+	queryUpper := strings.ToUpper(query)
+
+	switch {
+	case strings.HasPrefix(queryUpper, "CREATE TABLE"):
+		return handleCreateTable(query)
+	case strings.HasPrefix(queryUpper, "INSERT INTO"):
+		return handleInsert(query)
+	case strings.HasPrefix(queryUpper, "SELECT"):
+		return handleSelect(query)
+	default:
+		return "", errors.New("unsupported command")
+	}
 }
 
 func handleCreateTable(query string) (string, error) {
@@ -42,7 +58,7 @@ func handleCreateTable(query string) (string, error) {
 		Rows:    [][]string{},
 	}
 
-	tables[header] = table
+	Tables[header] = table
 	returnMsg := fmt.Sprintf("Table '%s' created.", header)
 
 	return returnMsg, SaveBinaryDB()
@@ -59,7 +75,7 @@ func handleInsert(query string) (string, error) {
 		return "", errors.New("invalid INSERT INTO syntax")
 	}
 	tableName := intoPart[2]
-	table, exists := tables[tableName]
+	table, exists := Tables[tableName]
 	if !exists {
 		return "", errors.New("table does not exist")
 	}
@@ -92,7 +108,7 @@ func handleSelect(query string) (string, error) {
 	}
 
 	tableName := tokens[3]
-	table, exists := tables[tableName]
+	table, exists := Tables[tableName]
 
 	if !exists {
 		return "", errors.New("table does not exist")

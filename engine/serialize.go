@@ -31,7 +31,7 @@ func SaveBinaryDB() error {
 		return err
 	}
 
-	for _, table := range tables {
+	for _, table := range Tables {
 		err := writeTable(file, table)
 		if err != nil {
 			return err
@@ -69,7 +69,7 @@ func LoadBinaryDB() error {
 		return fmt.Errorf("unsupported db version: %d", version)
 	}
 
-	tables = make(map[string]*Table)
+	Tables = make(map[string]*Table)
 	for {
 		table, err := readTable(file)
 		if err == io.EOF {
@@ -78,7 +78,7 @@ func LoadBinaryDB() error {
 		if err != nil {
 			return err
 		}
-		tables[table.Name] = table
+		Tables[table.Name] = table
 	}
 
 	return nil
