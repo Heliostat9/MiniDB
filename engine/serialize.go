@@ -15,8 +15,11 @@ var (
 
 const binaryDBFile = "data.mdb"
 
+// Limit maximum rows per table when loading to avoid excessive memory usage
+const maxRowCount = 1_000_000
+
 func SaveBinaryDB() error {
-	file, err := os.Create(binaryDBFile)
+	file, err := os.OpenFile(binaryDBFile, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
 
 	if err != nil {
 		return err
@@ -178,12 +181,16 @@ func readTable(r io.Reader) (*Table, error) {
 		columns = append(columns, columnName)
 	}
 
-	//READ: Rows
+	// READ: Rows
 	var rowCount uint32
 	err = binary.Read(r, binary.LittleEndian, &rowCount)
 
 	if err != nil {
 		return nil, err
+	}
+
+	if rowCount > maxRowCount {
+		return nil, fmt.Errorf("row count %d exceeds limit", rowCount)
 	}
 
 	rows := make([][]string, 0, rowCount)
