@@ -29,6 +29,8 @@ func HandleCommand(query string) (string, error) {
 		return handleCreateTable(query)
 	case strings.HasPrefix(queryUpper, "INSERT INTO"):
 		return handleInsert(query)
+	case strings.HasPrefix(queryUpper, "UPDATE"):
+		return handleUpdate(query)
 	case strings.HasPrefix(queryUpper, "SELECT"):
 		return handleSelect(query)
 	default:
@@ -123,4 +125,88 @@ func handleSelect(query string) (string, error) {
 	}
 
 	return builder.String(), nil
+}
+
+func handleUpdate(query string) (string, error) {
+	queryUpper := strings.ToUpper(query)
+	setIdx := strings.Index(queryUpper, " SET ")
+	if setIdx == -1 {
+		return "", errors.New("invalid syntax for UPDATE")
+	}
+
+	whereIdx := strings.Index(queryUpper, " WHERE ")
+	if whereIdx == -1 {
+		return "", errors.New("UPDATE without WHERE is not supported")
+	}
+
+	tableName := strings.TrimSpace(query[6:setIdx])
+	table, exists := Tables[tableName]
+	if !exists {
+		return "", errors.New("table does not exist")
+	}
+
+	assignmentsRaw := query[setIdx+5 : whereIdx]
+	condRaw := query[whereIdx+7:]
+
+	// Parse condition
+	condParts := strings.SplitN(condRaw, "=", 2)
+	if len(condParts) != 2 {
+		return "", errors.New("invalid WHERE syntax")
+	}
+	condCol := strings.TrimSpace(condParts[0])
+	condVal := strings.Trim(strings.TrimSpace(condParts[1]), "'")
+
+	condIdx := -1
+	for i, c := range table.Columns {
+		if c == condCol {
+			condIdx = i
+			break
+		}
+	}
+	if condIdx == -1 {
+		return "", fmt.Errorf("unknown column %s", condCol)
+	}
+
+	// Parse assignments
+	assignmentList := strings.Split(assignmentsRaw, ",")
+	updates := make(map[int]string)
+	for _, a := range assignmentList {
+		parts := strings.SplitN(a, "=", 2)
+		if len(parts) != 2 {
+			return "", errors.New("invalid SET syntax")
+		}
+		col := strings.TrimSpace(parts[0])
+		val := strings.Trim(strings.TrimSpace(parts[1]), "'")
+
+		idx := -1
+		for i, c := range table.Columns {
+			if c == col {
+				idx = i
+				break
+			}
+		}
+		if idx == -1 {
+			return "", fmt.Errorf("unknown column %s", col)
+		}
+		updates[idx] = val
+	}
+
+	updated := 0
+	for i, row := range table.Rows {
+		if row[condIdx] == condVal {
+			for idx, val := range updates {
+				if idx < len(row) {
+					row[idx] = val
+				}
+			}
+			table.Rows[i] = row
+			updated++
+		}
+	}
+
+	if err := SaveBinaryDB(); err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("%d rows updated.", updated), nil
 }
