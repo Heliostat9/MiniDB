@@ -24,7 +24,9 @@ func SaveBinaryDB() error {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func() {
+		_ = file.Close()
+	}()
 
 	if _, err := file.Write(magicHeader); err != nil {
 		return err
@@ -52,7 +54,9 @@ func LoadBinaryDB() error {
 		}
 		return err
 	}
-	defer file.Close()
+	defer func() {
+		_ = file.Close()
+	}()
 
 	header := make([]byte, len(magicHeader))
 	if _, err := io.ReadFull(file, header); err != nil {
