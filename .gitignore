@@ -5,6 +5,7 @@
 *.out
 *.mdb
 *.bin
+coverage.out
 
 # Editor stuff
 *.swp

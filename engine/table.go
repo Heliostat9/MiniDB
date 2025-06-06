@@ -14,8 +14,6 @@ type Table struct {
 
 var Tables = make(map[string]*Table)
 
-const dbFile = "data.db"
-
 func Init() error {
 	return LoadBinaryDB()
 }
