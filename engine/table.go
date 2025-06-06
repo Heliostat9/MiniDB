@@ -65,12 +65,13 @@ func handleCreateTable(query string) (string, error) {
 }
 
 func handleInsert(query string) (string, error) {
-	parts := strings.SplitN(query, "VALUES", 2)
-	if len(parts) != 2 {
+	queryUpper := strings.ToUpper(query)
+	valuesIdx := strings.Index(queryUpper, "VALUES")
+	if valuesIdx == -1 {
 		return "", errors.New("invalid syntax for INSERT")
 	}
 
-	intoPart := strings.Fields(parts[0])
+	intoPart := strings.Fields(query[:valuesIdx])
 	if len(intoPart) < 3 {
 		return "", errors.New("invalid INSERT INTO syntax")
 	}
@@ -80,7 +81,7 @@ func handleInsert(query string) (string, error) {
 		return "", errors.New("table does not exist")
 	}
 
-	valuesRaw := strings.TrimSpace(parts[1])
+	valuesRaw := strings.TrimSpace(query[valuesIdx+len("VALUES"):])
 	open := strings.Index(valuesRaw, "(")
 	close := strings.Index(valuesRaw, ")")
 	if open == -1 || close == -1 || open > close {
@@ -98,7 +99,7 @@ func handleInsert(query string) (string, error) {
 	}
 
 	table.Rows = append(table.Rows, row)
-	return "1 row iserted.", SaveBinaryDB()
+	return "1 row inserted.", SaveBinaryDB()
 }
 
 func handleSelect(query string) (string, error) {
