@@ -8,9 +8,18 @@ import (
 	"sync"
 )
 
+type ColumnType string
+
+const (
+	TypeInt   ColumnType = "INT"
+	TypeText  ColumnType = "TEXT"
+	TypeFloat ColumnType = "FLOAT"
+	TypeBool  ColumnType = "BOOL"
+)
+
 type Column struct {
 	Name string
-	Type string
+	Type ColumnType
 }
 
 type Row []interface{}
@@ -66,9 +75,14 @@ func handleCreateTable(query string) (string, error) {
 			continue
 		}
 		name := parts[0]
-		colType := "TEXT"
+		colType := ColumnType("TEXT")
 		if len(parts) > 1 {
-			colType = strings.ToUpper(parts[1])
+			colType = ColumnType(strings.ToUpper(parts[1]))
+		}
+		switch colType {
+		case TypeInt, TypeText, TypeFloat, TypeBool:
+		default:
+			return "", fmt.Errorf("unknown column type %s", colType)
 		}
 		columns = append(columns, Column{Name: name, Type: colType})
 	}
@@ -123,15 +137,14 @@ func handleInsert(query string) (string, error) {
 	var row Row
 	for i, v := range vals {
 		val := strings.Trim(strings.TrimSpace(v), "'")
-		if i < len(table.Columns) && table.Columns[i].Type == "INT" {
-			num, err := strconv.Atoi(val)
-			if err != nil {
-				return "", fmt.Errorf("invalid INT value for column %s", table.Columns[i].Name)
-			}
-			row = append(row, num)
-		} else {
-			row = append(row, val)
+		if i >= len(table.Columns) {
+			return "", errors.New("columns count does not match")
 		}
+		parsed, err := parseValue(val, table.Columns[i].Type)
+		if err != nil {
+			return "", fmt.Errorf("invalid %s value for column %s", table.Columns[i].Type, table.Columns[i].Name)
+		}
+		row = append(row, parsed)
 	}
 
 	if len(row) != len(table.Columns) {
@@ -247,27 +260,19 @@ func handleUpdate(query string) (string, error) {
 		if idx == -1 {
 			return "", fmt.Errorf("unknown column %s", col)
 		}
-		if table.Columns[idx].Type == "INT" {
-			num, err := strconv.Atoi(val)
-			if err != nil {
-				return "", fmt.Errorf("invalid INT value for column %s", col)
-			}
-			updates[idx] = num
-		} else {
-			updates[idx] = val
+		parsed, err := parseValue(val, table.Columns[idx].Type)
+		if err != nil {
+			return "", fmt.Errorf("invalid %s value for column %s", table.Columns[idx].Type, col)
 		}
+		updates[idx] = parsed
 	}
 
 	var cond interface{}
-	if table.Columns[condIdx].Type == "INT" {
-		num, err := strconv.Atoi(condVal)
-		if err != nil {
-			return "", fmt.Errorf("invalid INT value for column %s", condCol)
-		}
-		cond = num
-	} else {
-		cond = condVal
+	parsedCond, err := parseValue(condVal, table.Columns[condIdx].Type)
+	if err != nil {
+		return "", fmt.Errorf("invalid %s value for column %s", table.Columns[condIdx].Type, condCol)
 	}
+	cond = parsedCond
 
 	updated := 0
 	table.mu.Lock()
@@ -301,4 +306,24 @@ func handleDump(query string) (string, error) {
 		return "", err
 	}
 	return fmt.Sprintf("Dump saved to %s.", filename), nil
+}
+
+func parseValue(val string, ct ColumnType) (interface{}, error) {
+	switch ct {
+	case TypeInt:
+		return strconv.Atoi(val)
+	case TypeFloat:
+		return strconv.ParseFloat(val, 64)
+	case TypeBool:
+		lower := strings.ToLower(val)
+		if lower == "true" || lower == "1" {
+			return true, nil
+		}
+		if lower == "false" || lower == "0" {
+			return false, nil
+		}
+		return nil, fmt.Errorf("invalid BOOL value")
+	default:
+		return val, nil
+	}
 }

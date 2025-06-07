@@ -15,6 +15,7 @@
 - 📂 Загрузка таблиц при старте (persist между запусками)
 - 🔐 Magic header и поддержка версий формата файла
 - ⚙️ Написан чисто на Go (без зависимостей)
+- 📊 Поддержка типов INT, FLOAT, BOOL и TEXT
 - 📤 Экспорт таблиц в SQL-дамп
 
 ---
@@ -68,9 +69,10 @@ EXIT
 
 ```sql
 CREATE TABLE users (id, name, email)
+CREATE TABLE metrics (score FLOAT, active BOOL)
 INSERT INTO users VALUES (1, Alice, alice@example.com)
-INSERT INTO users VALUES (2, Bob, bob@example.com)
-SELECT * FROM users
+INSERT INTO metrics VALUES (3.14, true)
+SELECT * FROM metrics
 ```
 
 ## 🛠 Использование

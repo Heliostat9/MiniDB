@@ -19,13 +19,15 @@ go run main.go
 - `DUMP [filename];` — экспорт текущего состояния в SQL‑дамп.
 - `EXIT;` — завершение работы.
 
-Поддерживаются типы колонок `INT` и `TEXT`. Если тип не указан, по умолчанию используется `TEXT`.
+Поддерживаются типы колонок `INT`, `FLOAT`, `BOOL` и `TEXT`. Если тип не указан, по умолчанию используется `TEXT`.
 
 ## Пример сеанса
 ```sql
 CREATE TABLE users (id INT, name TEXT);
+CREATE TABLE metrics (score FLOAT, active BOOL);
 INSERT INTO users VALUES (1, 'Alice');
-SELECT * FROM users;
+INSERT INTO metrics VALUES (3.14, true);
+SELECT * FROM metrics;
 UPDATE users SET name='Bob' WHERE id=1;
 DUMP backup.sql;
 EXIT;
