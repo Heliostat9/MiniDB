@@ -2,6 +2,7 @@ package main
 
 import (
 	"minisql/engine"
+	"os"
 	"strings"
 	"testing"
 )
@@ -67,5 +68,28 @@ func TestHandleUpdate(t *testing.T) {
 	}
 	if !strings.Contains(result, "Bob") {
 		t.Errorf("update did not apply: %s", result)
+	}
+}
+
+func TestSaveSQLDump(t *testing.T) {
+	engine.Tables = make(map[string]*engine.Table)
+
+	_, _ = engine.HandleCommand("CREATE TABLE users (id INT, name TEXT)")
+	_, _ = engine.HandleCommand("INSERT INTO users VALUES (1, 'Alice')")
+
+	if err := engine.SaveSQLDump("test_dump.sql"); err != nil {
+		t.Fatalf("dump failed: %v", err)
+	}
+
+	data, err := os.ReadFile("test_dump.sql")
+	if err != nil {
+		t.Fatalf("read dump failed: %v", err)
+	}
+	_ = os.Remove("test_dump.sql")
+
+	dump := string(data)
+	if !strings.Contains(dump, "CREATE TABLE users") ||
+		!strings.Contains(dump, "INSERT INTO users VALUES (1, 'Alice')") {
+		t.Errorf("dump content incorrect: %s", dump)
 	}
 }
