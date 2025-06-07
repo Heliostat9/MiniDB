@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 )
 
 var (
@@ -40,7 +41,9 @@ func SaveBinaryDB() error {
 	}
 
 	for _, table := range Tables {
+		table.mu.RLock()
 		err := writeTable(file, table)
+		table.mu.RUnlock()
 		if err != nil {
 			return err
 		}
@@ -146,13 +149,14 @@ func writeTable(w io.Writer, table *Table) error {
 	}
 
 	for _, row := range table.Rows {
-		for _, data := range row {
-			dataLen := uint16(len(data))
+		for _, val := range row {
+			str := fmt.Sprint(val)
+			dataLen := uint16(len(str))
 			if err := binary.Write(w, binary.LittleEndian, dataLen); err != nil {
 				return err
 			}
 
-			if _, err := w.Write([]byte(data)); err != nil {
+			if _, err := w.Write([]byte(str)); err != nil {
 				return err
 			}
 		}
@@ -218,10 +222,10 @@ func readTableV1(r io.Reader) (*Table, error) {
 		return nil, fmt.Errorf("row count %d exceeds limit", rowCount)
 	}
 
-	rows := make([][]string, 0, rowCount)
+	rows := make([]Row, 0, rowCount)
 
 	for i := 0; i < int(rowCount); i++ {
-		row := make([]string, 0, colCount)
+		row := make(Row, 0, colCount)
 
 		for j := 0; j < int(colCount); j++ {
 			var valLen uint16
@@ -316,10 +320,10 @@ func readTableV2(r io.Reader) (*Table, error) {
 		return nil, fmt.Errorf("row count %d exceeds limit", rowCount)
 	}
 
-	rows := make([][]string, 0, rowCount)
+	rows := make([]Row, 0, rowCount)
 
 	for i := 0; i < int(rowCount); i++ {
-		row := make([]string, 0, colCount)
+		row := make(Row, 0, colCount)
 
 		for j := 0; j < int(colCount); j++ {
 			var valLen uint16
@@ -334,7 +338,16 @@ func readTableV2(r io.Reader) (*Table, error) {
 				return nil, err
 			}
 
-			row = append(row, string(valBytes))
+			valStr := string(valBytes)
+			if columns[j].Type == "INT" {
+				if num, err := strconv.Atoi(valStr); err == nil {
+					row = append(row, num)
+				} else {
+					row = append(row, valStr)
+				}
+			} else {
+				row = append(row, valStr)
+			}
 		}
 
 		rows = append(rows, row)

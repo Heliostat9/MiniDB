@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 type Column struct {
@@ -12,10 +13,13 @@ type Column struct {
 	Type string
 }
 
+type Row []interface{}
+
 type Table struct {
 	Name    string
 	Columns []Column
-	Rows    [][]string
+	Rows    []Row
+	mu      sync.RWMutex
 }
 
 var Tables = make(map[string]*Table)
@@ -72,7 +76,7 @@ func handleCreateTable(query string) (string, error) {
 	table := &Table{
 		Name:    header,
 		Columns: columns,
-		Rows:    [][]string{},
+		Rows:    []Row{},
 	}
 
 	dbMu.Lock()
@@ -108,34 +112,35 @@ func handleInsert(query string) (string, error) {
 	}
 
 	vals := strings.Split(valuesRaw[open+1:close], ",")
-	var row []string
-	for _, v := range vals {
-		row = append(row, strings.Trim(strings.TrimSpace(v), "'"))
-	}
 
-	dbMu.Lock()
+	dbMu.RLock()
 	table, exists := Tables[tableName]
+	dbMu.RUnlock()
 	if !exists {
-		dbMu.Unlock()
 		return "", errors.New("table does not exist")
 	}
 
-	if len(row) != len(table.Columns) {
-		dbMu.Unlock()
-		return "", errors.New("columns count does not match")
-	}
-
-	for i, val := range row {
-		if table.Columns[i].Type == "INT" {
-			if _, err := strconv.Atoi(val); err != nil {
-				dbMu.Unlock()
+	var row Row
+	for i, v := range vals {
+		val := strings.Trim(strings.TrimSpace(v), "'")
+		if i < len(table.Columns) && table.Columns[i].Type == "INT" {
+			num, err := strconv.Atoi(val)
+			if err != nil {
 				return "", fmt.Errorf("invalid INT value for column %s", table.Columns[i].Name)
 			}
+			row = append(row, num)
+		} else {
+			row = append(row, val)
 		}
 	}
 
+	if len(row) != len(table.Columns) {
+		return "", errors.New("columns count does not match")
+	}
+
+	table.mu.Lock()
 	table.Rows = append(table.Rows, row)
-	dbMu.Unlock()
+	table.mu.Unlock()
 
 	if err := SaveBinaryDB(); err != nil {
 		return "", err
@@ -164,9 +169,15 @@ func handleSelect(query string) (string, error) {
 	}
 	builder.WriteString(strings.Join(colNames, "\t") + "\n")
 
+	table.mu.RLock()
 	for _, row := range table.Rows {
-		builder.WriteString(strings.Join(row, "\t") + "\n")
+		strVals := make([]string, len(row))
+		for i, v := range row {
+			strVals[i] = fmt.Sprint(v)
+		}
+		builder.WriteString(strings.Join(strVals, "\t") + "\n")
 	}
+	table.mu.RUnlock()
 	dbMu.RUnlock()
 
 	return builder.String(), nil
@@ -186,10 +197,10 @@ func handleUpdate(query string) (string, error) {
 
 	tableName := strings.TrimSpace(query[6:setIdx])
 
-	dbMu.Lock()
+	dbMu.RLock()
 	table, exists := Tables[tableName]
+	dbMu.RUnlock()
 	if !exists {
-		dbMu.Unlock()
 		return "", errors.New("table does not exist")
 	}
 
@@ -199,7 +210,6 @@ func handleUpdate(query string) (string, error) {
 	// Parse condition
 	condParts := strings.SplitN(condRaw, "=", 2)
 	if len(condParts) != 2 {
-		dbMu.Unlock()
 		return "", errors.New("invalid WHERE syntax")
 	}
 	condCol := strings.TrimSpace(condParts[0])
@@ -213,17 +223,15 @@ func handleUpdate(query string) (string, error) {
 		}
 	}
 	if condIdx == -1 {
-		dbMu.Unlock()
 		return "", fmt.Errorf("unknown column %s", condCol)
 	}
 
 	// Parse assignments
 	assignmentList := strings.Split(assignmentsRaw, ",")
-	updates := make(map[int]string)
+	updates := make(map[int]interface{})
 	for _, a := range assignmentList {
 		parts := strings.SplitN(a, "=", 2)
 		if len(parts) != 2 {
-			dbMu.Unlock()
 			return "", errors.New("invalid SET syntax")
 		}
 		col := strings.TrimSpace(parts[0])
@@ -237,21 +245,34 @@ func handleUpdate(query string) (string, error) {
 			}
 		}
 		if idx == -1 {
-			dbMu.Unlock()
 			return "", fmt.Errorf("unknown column %s", col)
 		}
 		if table.Columns[idx].Type == "INT" {
-			if _, err := strconv.Atoi(val); err != nil {
-				dbMu.Unlock()
+			num, err := strconv.Atoi(val)
+			if err != nil {
 				return "", fmt.Errorf("invalid INT value for column %s", col)
 			}
+			updates[idx] = num
+		} else {
+			updates[idx] = val
 		}
-		updates[idx] = val
+	}
+
+	var cond interface{}
+	if table.Columns[condIdx].Type == "INT" {
+		num, err := strconv.Atoi(condVal)
+		if err != nil {
+			return "", fmt.Errorf("invalid INT value for column %s", condCol)
+		}
+		cond = num
+	} else {
+		cond = condVal
 	}
 
 	updated := 0
+	table.mu.Lock()
 	for i, row := range table.Rows {
-		if row[condIdx] == condVal {
+		if row[condIdx] == cond {
 			for idx, val := range updates {
 				if idx < len(row) {
 					row[idx] = val
@@ -261,7 +282,7 @@ func handleUpdate(query string) (string, error) {
 			updated++
 		}
 	}
-	dbMu.Unlock()
+	table.mu.Unlock()
 
 	if err := SaveBinaryDB(); err != nil {
 		return "", err

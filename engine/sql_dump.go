@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"fmt"
 	"os"
 	"strings"
 )
@@ -47,17 +48,17 @@ func buildCreateSQL(t *Table) string {
 	return b.String()
 }
 
-func buildInsertSQL(t *Table, row []string) string {
+func buildInsertSQL(t *Table, row Row) string {
 	var b strings.Builder
 	b.WriteString("INSERT INTO ")
 	b.WriteString(t.Name)
 	b.WriteString(" VALUES (")
 	for i, val := range row {
 		if t.Columns[i].Type == "INT" {
-			b.WriteString(val)
+			b.WriteString(fmt.Sprint(val))
 		} else {
 			b.WriteString("'")
-			b.WriteString(strings.ReplaceAll(val, "'", "''"))
+			b.WriteString(strings.ReplaceAll(fmt.Sprint(val), "'", "''"))
 			b.WriteString("'")
 		}
 		if i != len(row)-1 {
