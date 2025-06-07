@@ -37,6 +37,8 @@ func HandleCommand(query string) (string, error) {
 		return handleUpdate(query)
 	case strings.HasPrefix(queryUpper, "SELECT"):
 		return handleSelect(query)
+	case strings.HasPrefix(queryUpper, "DUMP"):
+		return handleDump(query)
 	default:
 		return "", errors.New("unsupported command")
 	}
@@ -266,4 +268,16 @@ func handleUpdate(query string) (string, error) {
 	}
 
 	return fmt.Sprintf("%d rows updated.", updated), nil
+}
+
+func handleDump(query string) (string, error) {
+	tokens := strings.Fields(query)
+	filename := "dump.sql"
+	if len(tokens) > 1 {
+		filename = tokens[1]
+	}
+	if err := SaveSQLDump(filename); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("Dump saved to %s.", filename), nil
 }
