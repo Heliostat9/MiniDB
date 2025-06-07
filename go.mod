@@ -1,3 +1,5 @@
 module minisql
 
-go 1.24.1
+go 1.24.2
+
+toolchain go1.24.4

@@ -97,7 +97,7 @@ go run main.go
 ## 🧱 Пример API (в коде)
 
 ```go
-CreateTable("users", []string{"id", "name", "email"})
+CreateTable("users", []string{"id INT", "name TEXT", "email TEXT"})
 InsertRow("users", []string{"1", "Alice", "alice@example.com"})
 SaveBinaryDB() // сохраняет в файл
 ```
