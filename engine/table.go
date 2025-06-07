@@ -41,7 +41,7 @@ func handleCreateTable(query string) (string, error) {
 	close := strings.Index(query, ")")
 
 	if open == -1 || close == -1 || open > close {
-		return "", errors.New("invalid syntex for CREATE TABLE")
+		return "", errors.New("invalid syntax for CREATE TABLE")
 	}
 
 	header := strings.TrimSpace(query[12:open])
@@ -58,10 +58,16 @@ func handleCreateTable(query string) (string, error) {
 		Rows:    [][]string{},
 	}
 
+	dbMu.Lock()
 	Tables[header] = table
+	dbMu.Unlock()
+
 	returnMsg := fmt.Sprintf("Table '%s' created.", header)
 
-	return returnMsg, SaveBinaryDB()
+	if err := SaveBinaryDB(); err != nil {
+		return "", err
+	}
+	return returnMsg, nil
 }
 
 func handleInsert(query string) (string, error) {
@@ -76,10 +82,6 @@ func handleInsert(query string) (string, error) {
 		return "", errors.New("invalid INSERT INTO syntax")
 	}
 	tableName := intoPart[2]
-	table, exists := Tables[tableName]
-	if !exists {
-		return "", errors.New("table does not exist")
-	}
 
 	valuesRaw := strings.TrimSpace(query[valuesIdx+len("VALUES"):])
 	open := strings.Index(valuesRaw, "(")
@@ -94,12 +96,25 @@ func handleInsert(query string) (string, error) {
 		row = append(row, strings.Trim(strings.TrimSpace(v), "'"))
 	}
 
+	dbMu.Lock()
+	table, exists := Tables[tableName]
+	if !exists {
+		dbMu.Unlock()
+		return "", errors.New("table does not exist")
+	}
+
 	if len(row) != len(table.Columns) {
+		dbMu.Unlock()
 		return "", errors.New("columns count does not match")
 	}
 
 	table.Rows = append(table.Rows, row)
-	return "1 row inserted.", SaveBinaryDB()
+	dbMu.Unlock()
+
+	if err := SaveBinaryDB(); err != nil {
+		return "", err
+	}
+	return "1 row inserted.", nil
 }
 
 func handleSelect(query string) (string, error) {
@@ -109,9 +124,10 @@ func handleSelect(query string) (string, error) {
 	}
 
 	tableName := tokens[3]
+	dbMu.RLock()
 	table, exists := Tables[tableName]
-
 	if !exists {
+		dbMu.RUnlock()
 		return "", errors.New("table does not exist")
 	}
 
@@ -121,6 +137,7 @@ func handleSelect(query string) (string, error) {
 	for _, row := range table.Rows {
 		builder.WriteString(strings.Join(row, "\t") + "\n")
 	}
+	dbMu.RUnlock()
 
 	return builder.String(), nil
 }
@@ -138,8 +155,11 @@ func handleUpdate(query string) (string, error) {
 	}
 
 	tableName := strings.TrimSpace(query[6:setIdx])
+
+	dbMu.Lock()
 	table, exists := Tables[tableName]
 	if !exists {
+		dbMu.Unlock()
 		return "", errors.New("table does not exist")
 	}
 
@@ -149,6 +169,7 @@ func handleUpdate(query string) (string, error) {
 	// Parse condition
 	condParts := strings.SplitN(condRaw, "=", 2)
 	if len(condParts) != 2 {
+		dbMu.Unlock()
 		return "", errors.New("invalid WHERE syntax")
 	}
 	condCol := strings.TrimSpace(condParts[0])
@@ -162,6 +183,7 @@ func handleUpdate(query string) (string, error) {
 		}
 	}
 	if condIdx == -1 {
+		dbMu.Unlock()
 		return "", fmt.Errorf("unknown column %s", condCol)
 	}
 
@@ -171,6 +193,7 @@ func handleUpdate(query string) (string, error) {
 	for _, a := range assignmentList {
 		parts := strings.SplitN(a, "=", 2)
 		if len(parts) != 2 {
+			dbMu.Unlock()
 			return "", errors.New("invalid SET syntax")
 		}
 		col := strings.TrimSpace(parts[0])
@@ -184,6 +207,7 @@ func handleUpdate(query string) (string, error) {
 			}
 		}
 		if idx == -1 {
+			dbMu.Unlock()
 			return "", fmt.Errorf("unknown column %s", col)
 		}
 		updates[idx] = val
@@ -201,6 +225,7 @@ func handleUpdate(query string) (string, error) {
 			updated++
 		}
 	}
+	dbMu.Unlock()
 
 	if err := SaveBinaryDB(); err != nil {
 		return "", err
