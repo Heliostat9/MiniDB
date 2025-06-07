@@ -75,6 +75,19 @@ INSERT INTO metrics VALUES (3.14, true)
 SELECT * FROM metrics
 ```
 
+### 🧮 Примеры работы с типами данных
+
+```sql
+CREATE TABLE demo (
+    n INT,
+    rating FLOAT,
+    active BOOL,
+    note TEXT
+)
+INSERT INTO demo VALUES (42, 4.5, true, 'hello')
+SELECT * FROM demo
+```
+
 ## 🛠 Использование
 
 ```bash
@@ -95,6 +108,20 @@ go run main.go
 - `Dockerfile` для запуска в контейнере
 - отчёты о покрытии тестами сохраняются как artifacts
 - требует Go >=1.24
+
+## 🧪 Запуск тестов
+
+```bash
+make test  # выполнить unit-тесты
+make lint  # запустить линтер
+```
+
+## 🐳 Запуск в Docker
+
+```bash
+docker build -t minidb .
+docker run -it --rm minidb
+```
 
 ## 🧱 Пример API (в коде)
 
