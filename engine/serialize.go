@@ -19,6 +19,9 @@ const binaryDBFile = "data.mdb"
 const maxRowCount = 1_000_000
 
 func SaveBinaryDB() error {
+	dbMu.RLock()
+	defer dbMu.RUnlock()
+
 	file, err := os.OpenFile(binaryDBFile, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
 
 	if err != nil {
@@ -69,14 +72,14 @@ func LoadBinaryDB() error {
 
 	var version uint8
 	if err := binary.Read(file, binary.LittleEndian, &version); err != nil {
-		return fmt.Errorf("reding version: %w", err)
+		return fmt.Errorf("reading version: %w", err)
 	}
 
 	if version > dbVersion {
 		return fmt.Errorf("unsupported db version: %d", version)
 	}
 
-	Tables = make(map[string]*Table)
+	newTables := make(map[string]*Table)
 	for {
 		table, err := readTable(file)
 		if err == io.EOF {
@@ -85,8 +88,12 @@ func LoadBinaryDB() error {
 		if err != nil {
 			return err
 		}
-		Tables[table.Name] = table
+		newTables[table.Name] = table
 	}
+
+	dbMu.Lock()
+	Tables = newTables
+	dbMu.Unlock()
 
 	return nil
 }
