@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strconv"
 )
 
 var (
@@ -207,7 +206,7 @@ func readTableV1(r io.Reader) (*Table, error) {
 
 		columnName := string(colBytes)
 
-		columns = append(columns, Column{Name: columnName, Type: "TEXT"})
+		columns = append(columns, Column{Name: columnName, Type: TypeText})
 	}
 
 	// READ: Rows
@@ -305,7 +304,7 @@ func readTableV2(r io.Reader) (*Table, error) {
 			return nil, err
 		}
 
-		columns = append(columns, Column{Name: string(colBytes), Type: string(typeBytes)})
+		columns = append(columns, Column{Name: string(colBytes), Type: ColumnType(string(typeBytes))})
 	}
 
 	// READ: Rows
@@ -339,14 +338,11 @@ func readTableV2(r io.Reader) (*Table, error) {
 			}
 
 			valStr := string(valBytes)
-			if columns[j].Type == "INT" {
-				if num, err := strconv.Atoi(valStr); err == nil {
-					row = append(row, num)
-				} else {
-					row = append(row, valStr)
-				}
-			} else {
+			parsed, err := parseValue(valStr, columns[j].Type)
+			if err != nil {
 				row = append(row, valStr)
+			} else {
+				row = append(row, parsed)
 			}
 		}
 

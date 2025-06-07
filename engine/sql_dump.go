@@ -39,7 +39,7 @@ func buildCreateSQL(t *Table) string {
 	for i, c := range t.Columns {
 		b.WriteString(c.Name)
 		b.WriteString(" ")
-		b.WriteString(c.Type)
+		b.WriteString(string(c.Type))
 		if i != len(t.Columns)-1 {
 			b.WriteString(", ")
 		}
@@ -54,12 +54,12 @@ func buildInsertSQL(t *Table, row Row) string {
 	b.WriteString(t.Name)
 	b.WriteString(" VALUES (")
 	for i, val := range row {
-		if t.Columns[i].Type == "INT" {
-			b.WriteString(fmt.Sprint(val))
-		} else {
+		if t.Columns[i].Type == TypeText {
 			b.WriteString("'")
 			b.WriteString(strings.ReplaceAll(fmt.Sprint(val), "'", "''"))
 			b.WriteString("'")
+		} else {
+			b.WriteString(fmt.Sprint(val))
 		}
 		if i != len(row)-1 {
 			b.WriteString(", ")

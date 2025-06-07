@@ -93,3 +93,26 @@ func TestSaveSQLDump(t *testing.T) {
 		t.Errorf("dump content incorrect: %s", dump)
 	}
 }
+
+func TestAdditionalTypes(t *testing.T) {
+	engine.Tables = make(map[string]*engine.Table)
+
+	_, err := engine.HandleCommand("CREATE TABLE metrics (score FLOAT, active BOOL)")
+	if err != nil {
+		t.Fatalf("create failed: %v", err)
+	}
+
+	_, err = engine.HandleCommand("INSERT INTO metrics VALUES (3.14, true)")
+	if err != nil {
+		t.Fatalf("insert failed: %v", err)
+	}
+
+	result, err := engine.HandleCommand("SELECT * FROM metrics")
+	if err != nil {
+		t.Fatalf("select failed: %v", err)
+	}
+
+	if !strings.Contains(result, "3.14") || !strings.Contains(result, "true") {
+		t.Errorf("select returned wrong data: %s", result)
+	}
+}
