@@ -3,12 +3,18 @@ package engine
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 )
 
+type Column struct {
+	Name string
+	Type string
+}
+
 type Table struct {
 	Name    string
-	Columns []string
+	Columns []Column
 	Rows    [][]string
 }
 
@@ -47,14 +53,23 @@ func handleCreateTable(query string) (string, error) {
 	header := strings.TrimSpace(query[12:open])
 	cols := strings.Split(query[open+1:close], ",")
 
-	var columnsNames []string
+	var columns []Column
 	for _, col := range cols {
-		columnsNames = append(columnsNames, strings.TrimSpace(col))
+		parts := strings.Fields(strings.TrimSpace(col))
+		if len(parts) == 0 {
+			continue
+		}
+		name := parts[0]
+		colType := "TEXT"
+		if len(parts) > 1 {
+			colType = strings.ToUpper(parts[1])
+		}
+		columns = append(columns, Column{Name: name, Type: colType})
 	}
 
 	table := &Table{
 		Name:    header,
-		Columns: columnsNames,
+		Columns: columns,
 		Rows:    [][]string{},
 	}
 
@@ -108,6 +123,15 @@ func handleInsert(query string) (string, error) {
 		return "", errors.New("columns count does not match")
 	}
 
+	for i, val := range row {
+		if table.Columns[i].Type == "INT" {
+			if _, err := strconv.Atoi(val); err != nil {
+				dbMu.Unlock()
+				return "", fmt.Errorf("invalid INT value for column %s", table.Columns[i].Name)
+			}
+		}
+	}
+
 	table.Rows = append(table.Rows, row)
 	dbMu.Unlock()
 
@@ -132,7 +156,11 @@ func handleSelect(query string) (string, error) {
 	}
 
 	var builder strings.Builder
-	builder.WriteString(strings.Join(table.Columns, "\t") + "\n")
+	colNames := make([]string, len(table.Columns))
+	for i, c := range table.Columns {
+		colNames[i] = c.Name
+	}
+	builder.WriteString(strings.Join(colNames, "\t") + "\n")
 
 	for _, row := range table.Rows {
 		builder.WriteString(strings.Join(row, "\t") + "\n")
@@ -177,7 +205,7 @@ func handleUpdate(query string) (string, error) {
 
 	condIdx := -1
 	for i, c := range table.Columns {
-		if c == condCol {
+		if c.Name == condCol {
 			condIdx = i
 			break
 		}
@@ -201,7 +229,7 @@ func handleUpdate(query string) (string, error) {
 
 		idx := -1
 		for i, c := range table.Columns {
-			if c == col {
+			if c.Name == col {
 				idx = i
 				break
 			}
@@ -209,6 +237,12 @@ func handleUpdate(query string) (string, error) {
 		if idx == -1 {
 			dbMu.Unlock()
 			return "", fmt.Errorf("unknown column %s", col)
+		}
+		if table.Columns[idx].Type == "INT" {
+			if _, err := strconv.Atoi(val); err != nil {
+				dbMu.Unlock()
+				return "", fmt.Errorf("invalid INT value for column %s", col)
+			}
 		}
 		updates[idx] = val
 	}

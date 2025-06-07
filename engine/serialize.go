@@ -10,7 +10,7 @@ import (
 
 var (
 	magicHeader = []byte("MYDB")
-	dbVersion   = uint8(1)
+	dbVersion   = uint8(2)
 )
 
 const binaryDBFile = "data.mdb"
@@ -81,7 +81,13 @@ func LoadBinaryDB() error {
 
 	newTables := make(map[string]*Table)
 	for {
-		table, err := readTable(file)
+		var table *Table
+		var err error
+		if version == 1 {
+			table, err = readTableV1(file)
+		} else {
+			table, err = readTableV2(file)
+		}
 		if err == io.EOF {
 			break
 		}
@@ -115,11 +121,19 @@ func writeTable(w io.Writer, table *Table) error {
 	}
 
 	for _, col := range table.Columns {
-		colLen := uint8(len(col))
-		if err := binary.Write(w, binary.LittleEndian, colLen); err != nil {
+		nameLen := uint8(len(col.Name))
+		if err := binary.Write(w, binary.LittleEndian, nameLen); err != nil {
 			return err
 		}
-		if _, err := w.Write([]byte(col)); err != nil {
+		if _, err := w.Write([]byte(col.Name)); err != nil {
+			return err
+		}
+
+		typeLen := uint8(len(col.Type))
+		if err := binary.Write(w, binary.LittleEndian, typeLen); err != nil {
+			return err
+		}
+		if _, err := w.Write([]byte(col.Type)); err != nil {
 			return err
 		}
 	}
@@ -147,7 +161,7 @@ func writeTable(w io.Writer, table *Table) error {
 	return nil
 }
 
-func readTable(r io.Reader) (*Table, error) {
+func readTableV1(r io.Reader) (*Table, error) {
 	// READ: Table name
 	var nameLen uint8
 	err := binary.Read(r, binary.LittleEndian, &nameLen)
@@ -172,7 +186,7 @@ func readTable(r io.Reader) (*Table, error) {
 		return nil, err
 	}
 
-	columns := make([]string, 0, colCount)
+	columns := make([]Column, 0, colCount)
 
 	for i := 0; i < int(colCount); i++ {
 		var colLen uint8
@@ -189,7 +203,105 @@ func readTable(r io.Reader) (*Table, error) {
 
 		columnName := string(colBytes)
 
-		columns = append(columns, columnName)
+		columns = append(columns, Column{Name: columnName, Type: "TEXT"})
+	}
+
+	// READ: Rows
+	var rowCount uint32
+	err = binary.Read(r, binary.LittleEndian, &rowCount)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if rowCount > maxRowCount {
+		return nil, fmt.Errorf("row count %d exceeds limit", rowCount)
+	}
+
+	rows := make([][]string, 0, rowCount)
+
+	for i := 0; i < int(rowCount); i++ {
+		row := make([]string, 0, colCount)
+
+		for j := 0; j < int(colCount); j++ {
+			var valLen uint16
+			err = binary.Read(r, binary.LittleEndian, &valLen)
+			if err != nil {
+				return nil, err
+			}
+
+			valBytes := make([]byte, valLen)
+			_, err = io.ReadFull(r, valBytes)
+			if err != nil {
+				return nil, err
+			}
+
+			row = append(row, string(valBytes))
+		}
+
+		rows = append(rows, row)
+	}
+
+	return &Table{
+		Name:    tableName,
+		Columns: columns,
+		Rows:    rows,
+	}, nil
+}
+
+func readTableV2(r io.Reader) (*Table, error) {
+	// READ: Table name
+	var nameLen uint8
+	err := binary.Read(r, binary.LittleEndian, &nameLen)
+	if err != nil {
+		return nil, err
+	}
+
+	nameBytes := make([]byte, nameLen)
+	_, err = io.ReadFull(r, nameBytes)
+	if err != nil {
+		return nil, err
+	}
+
+	tableName := string(nameBytes)
+
+	// READ: Columns
+
+	var colCount uint8
+	err = binary.Read(r, binary.LittleEndian, &colCount)
+
+	if err != nil {
+		return nil, err
+	}
+
+	columns := make([]Column, 0, colCount)
+
+	for i := 0; i < int(colCount); i++ {
+		var colLen uint8
+		err = binary.Read(r, binary.LittleEndian, &colLen)
+		if err != nil {
+			return nil, err
+		}
+
+		colBytes := make([]byte, colLen)
+		_, err = io.ReadFull(r, colBytes)
+		if err != nil {
+			return nil, err
+		}
+
+		var typeLen uint8
+		err = binary.Read(r, binary.LittleEndian, &typeLen)
+		if err != nil {
+			return nil, err
+		}
+
+		typeBytes := make([]byte, typeLen)
+		_, err = io.ReadFull(r, typeBytes)
+		if err != nil {
+			return nil, err
+		}
+
+		columns = append(columns, Column{Name: string(colBytes), Type: string(typeBytes)})
 	}
 
 	// READ: Rows
