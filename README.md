@@ -131,6 +131,22 @@ InsertRow("users", []string{"1", "Alice", "alice@example.com"})
 SaveBinaryDB() // сохраняет в файл
 ```
 
+### Использование с `database/sql`
+
+```go
+import (
+    "database/sql"
+    _ "minisql/driver"
+)
+
+db, _ := sql.Open("minidb", "")
+defer db.Close()
+db.Exec("CREATE TABLE demo (id INT, name TEXT)")
+db.Exec("INSERT INTO demo VALUES (1, 'Alice')")
+row := db.QueryRow("SELECT * FROM demo")
+```
+Драйвер регистрируется автоматически при импорте. Установите его командой `go get <repo>/driver`, где `<repo>` — путь к репозиторию.
+
 ## 📁 Файл данных
 
 По умолчанию сохраняется в файл data.mdb (бинарный формат).
