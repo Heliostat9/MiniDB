@@ -99,9 +99,13 @@ func handleCreateTable(query string) (string, error) {
 		Rows:    []Row{},
 	}
 
-	dbMu.Lock()
-	Tables[header] = table
-	dbMu.Unlock()
+	if txCtx != nil {
+		Tables[header] = table
+	} else {
+		dbMu.Lock()
+		Tables[header] = table
+		dbMu.Unlock()
+	}
 
 	returnMsg := fmt.Sprintf("Table '%s' created.", header)
 
@@ -139,9 +143,15 @@ func handleInsert(query string) (string, error) {
 
 	vals := strings.Split(valuesRaw[open+1:close], ",")
 
-	dbMu.RLock()
-	table, exists := Tables[tableName]
-	dbMu.RUnlock()
+	var table *Table
+	var exists bool
+	if txCtx != nil {
+		table, exists = Tables[tableName]
+	} else {
+		dbMu.RLock()
+		table, exists = Tables[tableName]
+		dbMu.RUnlock()
+	}
 	if !exists {
 		return "", errors.New("table does not exist")
 	}
@@ -203,11 +213,20 @@ func handleSelect(query string) (string, error) {
 	}
 	tableName := strings.Fields(query[fromIdx+6:])[0]
 
-	dbMu.RLock()
-	table, exists := Tables[tableName]
-	if !exists {
-		dbMu.RUnlock()
-		return "", errors.New("table does not exist")
+	var table *Table
+	var exists bool
+	if txCtx != nil {
+		table, exists = Tables[tableName]
+		if !exists {
+			return "", errors.New("table does not exist")
+		}
+	} else {
+		dbMu.RLock()
+		table, exists = Tables[tableName]
+		if !exists {
+			dbMu.RUnlock()
+			return "", errors.New("table does not exist")
+		}
 	}
 
 	colIdx := make([]int, 0, len(cols))
@@ -229,7 +248,9 @@ func handleSelect(query string) (string, error) {
 				}
 			}
 			if idx == -1 {
-				dbMu.RUnlock()
+				if txCtx == nil {
+					dbMu.RUnlock()
+				}
 				return "", fmt.Errorf("unknown column %s", c)
 			}
 			colIdx = append(colIdx, idx)
@@ -247,12 +268,16 @@ func handleSelect(query string) (string, error) {
 			}
 		}
 		if idx == -1 {
-			dbMu.RUnlock()
+			if txCtx == nil {
+				dbMu.RUnlock()
+			}
 			return "", fmt.Errorf("unknown column %s", whereCol)
 		}
 		parsed, err := parseValue(fmt.Sprint(whereVal), table.Columns[idx].Type)
 		if err != nil {
-			dbMu.RUnlock()
+			if txCtx == nil {
+				dbMu.RUnlock()
+			}
 			return "", fmt.Errorf("invalid %s value for column %s", table.Columns[idx].Type, whereCol)
 		}
 		whereIdxCol = idx
@@ -276,7 +301,9 @@ func handleSelect(query string) (string, error) {
 		builder.WriteString(strings.Join(strVals, "\t") + "\n")
 	}
 	table.mu.RUnlock()
-	dbMu.RUnlock()
+	if txCtx == nil {
+		dbMu.RUnlock()
+	}
 
 	return builder.String(), nil
 }
@@ -298,9 +325,15 @@ func handleUpdate(query string) (string, error) {
 
 	tableName := strings.TrimSpace(query[6:setIdx])
 
-	dbMu.RLock()
-	table, exists := Tables[tableName]
-	dbMu.RUnlock()
+	var table *Table
+	var exists bool
+	if txCtx != nil {
+		table, exists = Tables[tableName]
+	} else {
+		dbMu.RLock()
+		table, exists = Tables[tableName]
+		dbMu.RUnlock()
+	}
 	if !exists {
 		return "", errors.New("table does not exist")
 	}

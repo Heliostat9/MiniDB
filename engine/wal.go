@@ -18,6 +18,10 @@ func appendWAL(entry string) error {
 	if walReplay {
 		return nil
 	}
+	if txCtx != nil {
+		txCtx.wal = append(txCtx.wal, entry)
+		return nil
+	}
 	walMu.Lock()
 	defer walMu.Unlock()
 	f, err := os.OpenFile(walFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
@@ -33,6 +37,9 @@ func appendWAL(entry string) error {
 
 func clearWAL() error {
 	if walReplay {
+		return nil
+	}
+	if txCtx != nil {
 		return nil
 	}
 	walMu.Lock()

@@ -7,7 +7,6 @@ package driver
 import (
 	"database/sql"
 	"database/sql/driver"
-	"errors"
 	"io"
 	"strings"
 
@@ -32,7 +31,15 @@ type conn struct{}
 
 func (c *conn) Prepare(query string) (driver.Stmt, error) { return &stmt{query: query}, nil }
 func (c *conn) Close() error                              { return nil }
-func (c *conn) Begin() (driver.Tx, error)                 { return nil, errors.New("transactions not supported") }
+func (c *conn) Begin() (driver.Tx, error) {
+	tx := engine.BeginTx()
+	return &sqlTx{tx: tx}, nil
+}
+
+type sqlTx struct{ tx *engine.Tx }
+
+func (t *sqlTx) Commit() error   { return t.tx.Commit() }
+func (t *sqlTx) Rollback() error { t.tx.Rollback(); return nil }
 
 type stmt struct{ query string }
 

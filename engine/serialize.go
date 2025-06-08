@@ -19,9 +19,16 @@ const binaryDBFile = "data.mdb"
 const maxRowCount = 10_000_000
 
 func SaveBinaryDB() error {
+	if txCtx != nil {
+		return nil
+	}
 	dbMu.RLock()
 	defer dbMu.RUnlock()
 
+	return saveBinaryDBNoLock()
+}
+
+func saveBinaryDBNoLock() error {
 	file, err := os.OpenFile(binaryDBFile, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
 
 	if err != nil {
