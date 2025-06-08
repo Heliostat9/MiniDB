@@ -34,7 +34,10 @@ type Table struct {
 var Tables = make(map[string]*Table)
 
 func Init() error {
-	return LoadBinaryDB()
+	if err := LoadBinaryDB(); err != nil {
+		return err
+	}
+	return replayWAL()
 }
 
 func HandleCommand(query string) (string, error) {
@@ -58,6 +61,9 @@ func HandleCommand(query string) (string, error) {
 }
 
 func handleCreateTable(query string) (string, error) {
+	if err := appendWAL(query); err != nil {
+		return "", err
+	}
 	open := strings.Index(query, "(")
 	close := strings.Index(query, ")")
 
@@ -102,10 +108,16 @@ func handleCreateTable(query string) (string, error) {
 	if err := SaveBinaryDB(); err != nil {
 		return "", err
 	}
+	if err := clearWAL(); err != nil {
+		return "", err
+	}
 	return returnMsg, nil
 }
 
 func handleInsert(query string) (string, error) {
+	if err := appendWAL(query); err != nil {
+		return "", err
+	}
 	queryUpper := strings.ToUpper(query)
 	valuesIdx := strings.Index(queryUpper, "VALUES")
 	if valuesIdx == -1 {
@@ -158,6 +170,9 @@ func handleInsert(query string) (string, error) {
 	if err := SaveBinaryDB(); err != nil {
 		return "", err
 	}
+	if err := clearWAL(); err != nil {
+		return "", err
+	}
 	return "1 row inserted.", nil
 }
 
@@ -197,6 +212,9 @@ func handleSelect(query string) (string, error) {
 }
 
 func handleUpdate(query string) (string, error) {
+	if err := appendWAL(query); err != nil {
+		return "", err
+	}
 	queryUpper := strings.ToUpper(query)
 	setIdx := strings.Index(queryUpper, " SET ")
 	if setIdx == -1 {
@@ -290,6 +308,9 @@ func handleUpdate(query string) (string, error) {
 	table.mu.Unlock()
 
 	if err := SaveBinaryDB(); err != nil {
+		return "", err
+	}
+	if err := clearWAL(); err != nil {
 		return "", err
 	}
 
