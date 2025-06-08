@@ -101,3 +101,15 @@ conn, _ := sql.Open("minidb", "")
 ```
 
 После открытия можно выполнять SQL-запросы через методы `Exec` и `Query` стандартного `database/sql`.
+
+### Транзакции
+
+С версии 0.8 поддерживаются простые транзакции. В `database/sql` они начинаются через `db.Begin()`:
+
+```go
+tx, _ := conn.Begin()
+tx.Exec("INSERT INTO demo VALUES (1)")
+tx.Commit() // или tx.Rollback()
+```
+
+При использовании пакета `engine` напрямую аналогичный интерфейс доступен через `engine.BeginTx()`.
