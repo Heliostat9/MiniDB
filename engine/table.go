@@ -177,12 +177,32 @@ func handleInsert(query string) (string, error) {
 }
 
 func handleSelect(query string) (string, error) {
-	tokens := strings.Fields(query)
-	if len(tokens) < 4 || tokens[1] != "*" || tokens[2] != "FROM" {
-		return "", errors.New("only SELECT * FROM <table> supported for now")
+	upper := strings.ToUpper(query)
+	whereIdx := strings.Index(upper, " WHERE ")
+	var whereCol string
+	var whereVal interface{}
+	if whereIdx != -1 {
+		condRaw := strings.TrimSpace(query[whereIdx+7:])
+		query = strings.TrimSpace(query[:whereIdx])
+		parts := strings.SplitN(condRaw, "=", 2)
+		if len(parts) != 2 {
+			return "", errors.New("invalid WHERE syntax")
+		}
+		whereCol = strings.TrimSpace(parts[0])
+		whereVal = strings.Trim(strings.TrimSpace(parts[1]), "'")
 	}
 
-	tableName := tokens[3]
+	fromIdx := strings.Index(upper, " FROM ")
+	if fromIdx == -1 {
+		return "", errors.New("invalid SELECT syntax")
+	}
+	colsRaw := strings.TrimSpace(query[6:fromIdx])
+	cols := strings.Split(colsRaw, ",")
+	for i, c := range cols {
+		cols[i] = strings.TrimSpace(c)
+	}
+	tableName := strings.Fields(query[fromIdx+6:])[0]
+
 	dbMu.RLock()
 	table, exists := Tables[tableName]
 	if !exists {
@@ -190,18 +210,68 @@ func handleSelect(query string) (string, error) {
 		return "", errors.New("table does not exist")
 	}
 
-	var builder strings.Builder
-	colNames := make([]string, len(table.Columns))
-	for i, c := range table.Columns {
-		colNames[i] = c.Name
+	colIdx := make([]int, 0, len(cols))
+	if len(cols) == 1 && cols[0] == "*" {
+		for i := range table.Columns {
+			colIdx = append(colIdx, i)
+		}
+		cols = make([]string, len(table.Columns))
+		for i, c := range table.Columns {
+			cols[i] = c.Name
+		}
+	} else {
+		for _, c := range cols {
+			idx := -1
+			for i, col := range table.Columns {
+				if col.Name == c {
+					idx = i
+					break
+				}
+			}
+			if idx == -1 {
+				dbMu.RUnlock()
+				return "", fmt.Errorf("unknown column %s", c)
+			}
+			colIdx = append(colIdx, idx)
+		}
 	}
-	builder.WriteString(strings.Join(colNames, "\t") + "\n")
+
+	var whereIdxCol int
+	var whereParsed interface{}
+	if whereCol != "" {
+		idx := -1
+		for i, c := range table.Columns {
+			if c.Name == whereCol {
+				idx = i
+				break
+			}
+		}
+		if idx == -1 {
+			dbMu.RUnlock()
+			return "", fmt.Errorf("unknown column %s", whereCol)
+		}
+		parsed, err := parseValue(fmt.Sprint(whereVal), table.Columns[idx].Type)
+		if err != nil {
+			dbMu.RUnlock()
+			return "", fmt.Errorf("invalid %s value for column %s", table.Columns[idx].Type, whereCol)
+		}
+		whereIdxCol = idx
+		whereParsed = parsed
+	}
+
+	var builder strings.Builder
+	builder.WriteString(strings.Join(cols, "\t") + "\n")
 
 	table.mu.RLock()
 	for _, row := range table.Rows {
-		strVals := make([]string, len(row))
-		for i, v := range row {
-			strVals[i] = fmt.Sprint(v)
+		if whereCol != "" {
+			if row[whereIdxCol] != whereParsed {
+				continue
+			}
+		}
+		strVals := make([]string, len(colIdx))
+		for i, idx := range colIdx {
+			strVals[i] = fmt.Sprint(row[idx])
 		}
 		builder.WriteString(strings.Join(strVals, "\t") + "\n")
 	}

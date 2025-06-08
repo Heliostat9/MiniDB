@@ -117,6 +117,22 @@ func TestAdditionalTypes(t *testing.T) {
 	}
 }
 
+func TestSelectWhere(t *testing.T) {
+	engine.Tables = make(map[string]*engine.Table)
+
+	_, _ = engine.HandleCommand("CREATE TABLE users (id INT, name TEXT)")
+	_, _ = engine.HandleCommand("INSERT INTO users VALUES (1, 'Alice')")
+	_, _ = engine.HandleCommand("INSERT INTO users VALUES (2, 'Bob')")
+
+	result, err := engine.HandleCommand("SELECT name FROM users WHERE id=2")
+	if err != nil {
+		t.Fatalf("select with where failed: %v", err)
+	}
+	if !strings.Contains(result, "Bob") || strings.Contains(result, "Alice") {
+		t.Errorf("unexpected select result: %s", result)
+	}
+}
+
 func TestWALRecovery(t *testing.T) {
 	_ = os.Remove("data.mdb")
 	_ = os.Remove("data.wal")
