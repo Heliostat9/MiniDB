@@ -217,6 +217,9 @@ func handleSelect(query string) (string, error) {
 	var exists bool
 	if txCtx != nil {
 		table, exists = Tables[tableName]
+		if !exists {
+			return "", errors.New("table does not exist")
+		}
 	} else {
 		dbMu.RLock()
 		table, exists = Tables[tableName]
