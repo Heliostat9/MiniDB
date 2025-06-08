@@ -133,6 +133,42 @@ func TestSelectWhere(t *testing.T) {
 	}
 }
 
+func TestTransactionCommit(t *testing.T) {
+	engine.Tables = make(map[string]*engine.Table)
+	_, _ = engine.HandleCommand("CREATE TABLE tx (id INT)")
+	tx := engine.BeginTx()
+	if _, err := tx.Exec("INSERT INTO tx VALUES (1)"); err != nil {
+		t.Fatalf("exec: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+	res, err := engine.HandleCommand("SELECT * FROM tx")
+	if err != nil {
+		t.Fatalf("select: %v", err)
+	}
+	if !strings.Contains(res, "1") {
+		t.Errorf("commit failed: %s", res)
+	}
+}
+
+func TestTransactionRollback(t *testing.T) {
+	engine.Tables = make(map[string]*engine.Table)
+	_, _ = engine.HandleCommand("CREATE TABLE tx2 (id INT)")
+	tx := engine.BeginTx()
+	if _, err := tx.Exec("INSERT INTO tx2 VALUES (1)"); err != nil {
+		t.Fatalf("exec: %v", err)
+	}
+	tx.Rollback()
+	res, err := engine.HandleCommand("SELECT * FROM tx2")
+	if err != nil {
+		t.Fatalf("select: %v", err)
+	}
+	if strings.Contains(res, "1") {
+		t.Errorf("rollback failed: %s", res)
+	}
+}
+
 func TestWALRecovery(t *testing.T) {
 	_ = os.Remove("data.mdb")
 	_ = os.Remove("data.wal")
