@@ -116,3 +116,22 @@ func TestAdditionalTypes(t *testing.T) {
 		t.Errorf("select returned wrong data: %s", result)
 	}
 }
+
+func TestWALRecovery(t *testing.T) {
+	_ = os.Remove("data.mdb")
+	_ = os.Remove("data.wal")
+	wal := "CREATE TABLE waltest (id INT)\nINSERT INTO waltest VALUES (1)\n"
+	if err := os.WriteFile("data.wal", []byte(wal), 0600); err != nil {
+		t.Fatalf("write wal: %v", err)
+	}
+	if err := engine.Init(); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	table := engine.Tables["waltest"]
+	if table == nil || len(table.Rows) != 1 {
+		t.Fatalf("wal replay failed: %+v", table)
+	}
+	if _, err := os.Stat("data.wal"); !os.IsNotExist(err) {
+		t.Errorf("wal file not cleared")
+	}
+}
