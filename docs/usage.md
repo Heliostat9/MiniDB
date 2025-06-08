@@ -11,6 +11,20 @@ go run main.go
 ```
 При старте база попытается загрузить данные из файла `data.mdb`. Если файл отсутствует, будет создана новая пустая база.
 
+### HTTP режим
+
+Для использования MiniDB через HTTP передайте флаг `-listen` со значением адреса:
+
+```bash
+go run main.go -listen :8080
+```
+
+Запросы отправляются методом POST на путь `/query` с текстом SQL в теле:
+
+```bash
+curl -X POST -d "SELECT * FROM users;" http://localhost:8080/query
+```
+
 ## Основные команды CLI
 - `CREATE TABLE <name> (<column> <type>, ...);` — создание таблицы.
 - `INSERT INTO <name> VALUES (<value>, ...);` — вставка строки.
