@@ -76,6 +76,16 @@ func cloneTables(src map[string]*Table) map[string]*Table {
 			copy(nr, row)
 			t.Rows[i] = nr
 		}
+		if len(tbl.Indexes) > 0 {
+			t.Indexes = make(map[string]*Index, len(tbl.Indexes))
+			for col, idx := range tbl.Indexes {
+				ni := &Index{Column: idx.Column, idx: idx.idx, Values: make(map[interface{}][]int)}
+				for v, arr := range idx.Values {
+					ni.Values[v] = append([]int(nil), arr...)
+				}
+				t.Indexes[col] = ni
+			}
+		}
 		newMap[name] = t
 	}
 	return newMap

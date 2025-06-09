@@ -22,6 +22,13 @@ type Column struct {
 	Type ColumnType
 }
 
+// Index stores mapping from column values to row indexes for quick lookup.
+type Index struct {
+	Column string
+	idx    int
+	Values map[interface{}][]int
+}
+
 type Row []interface{}
 
 type Table struct {
@@ -29,6 +36,7 @@ type Table struct {
 	Columns []Column
 	Rows    []Row
 	mu      sync.RWMutex
+	Indexes map[string]*Index
 }
 
 var Tables = make(map[string]*Table)
@@ -47,6 +55,8 @@ func HandleCommand(query string) (string, error) {
 	switch {
 	case strings.HasPrefix(queryUpper, "CREATE TABLE"):
 		return handleCreateTable(query)
+	case strings.HasPrefix(queryUpper, "CREATE INDEX"):
+		return handleCreateIndex(query)
 	case strings.HasPrefix(queryUpper, "INSERT INTO"):
 		return handleInsert(query)
 	case strings.HasPrefix(queryUpper, "UPDATE"):
@@ -118,6 +128,42 @@ func handleCreateTable(query string) (string, error) {
 	return returnMsg, nil
 }
 
+func handleCreateIndex(query string) (string, error) {
+	parts := strings.Fields(query)
+	if len(parts) < 4 || strings.ToUpper(parts[1]) != "INDEX" || strings.ToUpper(parts[2]) != "ON" {
+		return "", errors.New("invalid CREATE INDEX syntax")
+	}
+	tableName := parts[3]
+	colRaw := parts[len(parts)-1]
+	open := strings.Index(colRaw, "(")
+	close := strings.Index(colRaw, ")")
+	if open == -1 || close == -1 || close <= open {
+		return "", errors.New("invalid CREATE INDEX syntax")
+	}
+	colName := colRaw[open+1 : close]
+
+	var table *Table
+	var exists bool
+	if txCtx != nil {
+		table, exists = Tables[tableName]
+	} else {
+		dbMu.RLock()
+		table, exists = Tables[tableName]
+		dbMu.RUnlock()
+	}
+	if !exists {
+		return "", errors.New("table does not exist")
+	}
+
+	table.mu.Lock()
+	err := table.createIndex(colName)
+	table.mu.Unlock()
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("Index on %s created.", colName), nil
+}
+
 func handleInsert(query string) (string, error) {
 	if err := appendWAL(query); err != nil {
 		return "", err
@@ -175,6 +221,8 @@ func handleInsert(query string) (string, error) {
 
 	table.mu.Lock()
 	table.Rows = append(table.Rows, row)
+	idx := len(table.Rows) - 1
+	table.addToIndexes(row, idx)
 	table.mu.Unlock()
 
 	if err := SaveBinaryDB(); err != nil {
@@ -187,6 +235,9 @@ func handleInsert(query string) (string, error) {
 }
 
 func handleSelect(query string) (string, error) {
+	if res, ok := resultCache.Get(query); ok {
+		return res, nil
+	}
 	upper := strings.ToUpper(query)
 	whereIdx := strings.Index(upper, " WHERE ")
 	var whereCol string
@@ -288,11 +339,27 @@ func handleSelect(query string) (string, error) {
 	builder.WriteString(strings.Join(cols, "\t") + "\n")
 
 	table.mu.RLock()
-	for _, row := range table.Rows {
-		if whereCol != "" {
-			if row[whereIdxCol] != whereParsed {
-				continue
+	var rowIndexes []int
+	if whereCol != "" {
+		if idx, ok := table.Indexes[whereCol]; ok {
+			if rows, ok2 := idx.Values[whereParsed]; ok2 {
+				rowIndexes = append(rowIndexes, rows...)
 			}
+		}
+	}
+	if rowIndexes == nil {
+		rowIndexes = make([]int, len(table.Rows))
+		for i := range table.Rows {
+			rowIndexes[i] = i
+		}
+	}
+	for _, rid := range rowIndexes {
+		if rid >= len(table.Rows) {
+			continue
+		}
+		row := table.Rows[rid]
+		if whereCol != "" && row[whereIdxCol] != whereParsed {
+			continue
 		}
 		strVals := make([]string, len(colIdx))
 		for i, idx := range colIdx {
@@ -305,7 +372,9 @@ func handleSelect(query string) (string, error) {
 		dbMu.RUnlock()
 	}
 
-	return builder.String(), nil
+	res := builder.String()
+	resultCache.Add(query, res)
+	return res, nil
 }
 
 func handleUpdate(query string) (string, error) {
@@ -404,7 +473,9 @@ func handleUpdate(query string) (string, error) {
 					row[idx] = val
 				}
 			}
+			old := table.Rows[i]
 			table.Rows[i] = row
+			table.updateIndexes(old, row, i)
 			updated++
 		}
 	}
@@ -449,5 +520,53 @@ func parseValue(val string, ct ColumnType) (interface{}, error) {
 		return nil, fmt.Errorf("invalid BOOL value")
 	default:
 		return val, nil
+	}
+}
+
+func (t *Table) createIndex(column string) error {
+	idx := -1
+	for i, c := range t.Columns {
+		if c.Name == column {
+			idx = i
+			break
+		}
+	}
+	if idx == -1 {
+		return fmt.Errorf("unknown column %s", column)
+	}
+	m := make(map[interface{}][]int)
+	for i, row := range t.Rows {
+		v := row[idx]
+		m[v] = append(m[v], i)
+	}
+	if t.Indexes == nil {
+		t.Indexes = make(map[string]*Index)
+	}
+	t.Indexes[column] = &Index{Column: column, idx: idx, Values: m}
+	return nil
+}
+
+func (t *Table) addToIndexes(row Row, rowIdx int) {
+	for _, idx := range t.Indexes {
+		val := row[idx.idx]
+		idx.Values[val] = append(idx.Values[val], rowIdx)
+	}
+}
+
+func (t *Table) updateIndexes(oldRow, newRow Row, rowIdx int) {
+	for _, idx := range t.Indexes {
+		ov := oldRow[idx.idx]
+		nv := newRow[idx.idx]
+		if ov == nv {
+			continue
+		}
+		arr := idx.Values[ov]
+		for i := range arr {
+			if arr[i] == rowIdx {
+				idx.Values[ov] = append(arr[:i], arr[i+1:]...)
+				break
+			}
+		}
+		idx.Values[nv] = append(idx.Values[nv], rowIdx)
 	}
 }
