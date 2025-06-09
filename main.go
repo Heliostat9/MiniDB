@@ -15,7 +15,12 @@ import (
 
 func main() {
 	listen := flag.String("listen", "", "start HTTP server on this address")
+	maxRows := flag.Int("maxrows", engine.MaxRowCount, "maximum rows per table")
+	cacheLimit := flag.Int("cache", 1_048_576, "query cache size in bytes")
 	flag.Parse()
+
+	engine.MaxRowCount = *maxRows
+	engine.InitCache(*cacheLimit)
 
 	if err := engine.Init(); err != nil {
 		fmt.Println("Error loading DB:", err)
